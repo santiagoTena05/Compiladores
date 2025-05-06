@@ -1,0 +1,37 @@
+EXPRESIONES REGULARES
+
+b = ' \t\n'
+Palabras reservadas:
+else: \belse\b
+if: \bif\b
+int: \breturn\b
+void: \bvoid\b
+while: \bwhile\b
+
+Tokens de caracteres múltiples:
+ID: [a|...|z|A|...|Z][a|...|z|A|...|Z]*
+NUM: \d+
+
+Símbolos especiales:
+PLUS: \+
+MINUS: -
+TIMES: \*
+OVER: /
+LT: <
+LTEQ: <=
+GT: >
+GTEQ: >=
+EQ: ==
+NEQ: !=
+ASSIGN: =
+SEMI: ;
+COMMA: ,
+LPAREN: \(
+RPAREN: \)
+LBRACK: \[
+RBRACK: \]
+LBRACE: \{
+RBRACE: \}
+
+Comentarios
+COMMENT: \/\*[\s\S]*?\*\/
