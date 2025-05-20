@@ -1,27 +1,26 @@
 # A01781293 Santiago Tena
 from globalTypes import *
 
-lineno = 1 # Número de línea
+lineno = 1  # Número de línea
+program = ""  
+position = 0
+programLength = 0
 
-# Recibe un programa como una cadena de texto, la posición y longitud total
 def recibeScanner(prog, pos, long):
-    global program
-    global position
-    global programLength
+    global program, position, programLength
     program = prog
     position = pos
     programLength = long
 
-# Revisar si el ID identificado se encuentra en la clase de palabras reservadas
+
 def reservedLookup(tokenString):
     for w in ReservedWords:
         if tokenString == w.value:
-            return TokenType(w.value)  # Devuelve el TokenType correspondiente
+            return TokenType(w.value)
     return TokenType.ID
 
-# recibe una bandera booleana imprime , con valor por defecto true
 def getToken(imprime=True):
-    global position, lineno
+    global position, lineno  
     tokenString = ""
     currentToken = None
     state = StateType.START
@@ -42,7 +41,7 @@ def getToken(imprime=True):
             elif c.isalpha():
                 state = StateType.INID
             elif c == '=':
-                state = StateType.INEQ
+                state = StateType.INASSIGN
             elif c == '!':
                 save = False
                 state = StateType.INEXCL
@@ -51,16 +50,18 @@ def getToken(imprime=True):
             elif c == '>':
                 state = StateType.INGT
             elif c == '/':
-                if position + 1 < programLength and program[position+1] == '*': # Revisar si despues de un / existe un *
+                if position + 1 < programLength and program[position+1] == '*':
                     save = False
                     position += 1
                     state = StateType.INCOMMENT
                 else:
                     currentToken = TokenType.OVER
                     state = StateType.DONE
+            elif c == '$':  # Caso especial para ENDFILE
+                state = StateType.DONE
+                currentToken = TokenType.ENDFILE
             elif c in '+-*;:,()[]{}':
                 state = StateType.DONE
-                # Simbolos especiales
                 token_map = {
                     '+': TokenType.PLUS,
                     '-': TokenType.MINUS,
@@ -72,14 +73,14 @@ def getToken(imprime=True):
                     '[': TokenType.LBRACK,
                     ']': TokenType.RBRACK,
                     '{': TokenType.LBRACE,
-                    '}': TokenType.RBRACE,
+                    '}': TokenType.RBRACE
                 }
                 currentToken = token_map.get(c, TokenType.ERROR)
             elif c == '\n':
-                lineno += 1 # Aumentar uno a la linea
+                lineno += 1
                 save = False
             elif c in ' \t\r':
-                save = False # Ignorar los tabs y los espacios y los enter
+                save = False
             else:
                 currentToken = TokenType.ERROR
                 state = StateType.DONE
@@ -98,7 +99,7 @@ def getToken(imprime=True):
                 currentToken = reservedLookup(tokenString)
                 state = StateType.DONE
 
-        elif state == StateType.INEQ:
+        elif state == StateType.INASSIGN:
             if position + 1 < programLength and program[position+1] == '=':
                 position += 1
                 tokenString += '='
@@ -146,6 +147,7 @@ def getToken(imprime=True):
         position += 1
         if save:
             tokenString += c
+
 
     if imprime:
         print(lineno, currentToken, ':', tokenString)

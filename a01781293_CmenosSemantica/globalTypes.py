@@ -81,12 +81,12 @@ class StmtKind(Enum):
     IterK = 10
 
 class ExpKind(Enum):
-    OpK = 0        # Operaciones aritméticas
-    ConstK = 1     # Constantes numéricas
-    IdK = 2        # Identificadores
-    CallK = 3      # Llamadas a funciones
-    AssignK = 4    # Asignaciones
-    CompareK = 5   # Comparaciones
+    OpK = 0        # operación (aritmética o relacional)
+    ConstK = 1     # constante (NUM)
+    IdK = 2        # identificador (ID)
+    CallK = 3      # llamada a función (ID(args))
+    AssignK = 4    # asignación (ID = exp)
+    CompareK = 5   # comparación (exp1 < exp2)
     AddK = 6       # suma (exp1 + exp2)
     MulK = 7       # multiplicación (exp1 * exp2)
 

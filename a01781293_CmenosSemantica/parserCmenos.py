@@ -13,8 +13,12 @@ imprimeScanner = False
 
 def syntaxError(message):
     global Error
-    print(">>> Syntax error at line " + str(lineno) + ": " + message, end='')
+    print(f">>> Syntax error at line {lineno}: {message}", end='')
+    printToken(token, tokenString)
     Error = True
+    # Avanzar hasta un punto de sincronización
+    while token not in {TokenType.SEMI, TokenType.RBRACE, TokenType.RPAREN, TokenType.ENDFILE}:
+        token, tokenString, lineno = getToken(False)
 
 def match(expected):
     global token, tokenString, lineno
@@ -67,23 +71,25 @@ def var_declaration(tipo, name):
     t = newStmtNode(StmtKind.VarDeclK)
     t.name = name
     t.type = tipo
+    t.lineno = lineno
 
     if token == TokenType.SEMI:
+        match(TokenType.SEMI)
+    elif token == TokenType.ASSIGN:
+        match(TokenType.ASSIGN)
+        t.child[0] = expression()  # Guarda la expresión de inicialización
         match(TokenType.SEMI)
     elif token == TokenType.LBRACK:
         match(TokenType.LBRACK)
         if token == TokenType.NUM:
-            t.val = int(tokenString)  # Guardamos el tamaño del arreglo
+            t.val = int(tokenString)
             match(TokenType.NUM)
-        else:
-            syntaxError("expected number inside brackets")
         match(TokenType.RBRACK)
         match(TokenType.SEMI)
     else:
-        syntaxError("unexpected token in variable declaration")
+        syntaxError("expected ';' or '=' or '[' in variable declaration")
     
     return t
-
 
 #5. type-specifier —> "int" | "void"
 def type_specifier():
@@ -118,26 +124,27 @@ def fun_declaration(tipo, name):
 def params():
     if token == TokenType.VOID:
         match(TokenType.VOID)
-        if token == TokenType.ID:
-            # Es una lista de parámetros que empieza con "void" mal usado (ej: void x)
-            param_list()
-        else:
-            # Solo void: función sin parámetros
-            return None
-    else:
+        # Si es void solo, es una función sin parámetros
+        return None
+    elif token == TokenType.INT:
+        # Procesar lista de parámetros
         return param_list()
-
+    else:
+        # Función sin parámetros (ni void)
+        return None
 # 8. param-list —> param { "," param }
 
 def param_list():
-    t = param()
-    p = t
-    while token == TokenType.COMMA:
-        match(TokenType.COMMA)
-        q = param()
-        if p is not None:
-            p.sibling = q
-            p = q
+    t = None
+    if token in {TokenType.INT, TokenType.VOID}:
+        t = param()
+        p = t
+        while token == TokenType.COMMA:
+            match(TokenType.COMMA)
+            q = param()
+            if p is not None:
+                p.sibling = q
+                p = q
     return t
 
 #9. param —> type-specifier ID [ "[" "]" ]
@@ -177,24 +184,23 @@ def compound_stmt():
 
 #11. local-declarations —> { var-declaration }
 def local_declarations():
-    global tokenActual
     t = None
-    while tokenActual is not None and (tokenActual.tipo == TokenType.INT or tokenActual.tipo == TokenType.VOID):
-        tipo = tokenActual.lexema
-        match(tokenActual.tipo)
-        if tokenActual.tipo != TokenType.ID:
-            syntaxError("Expected identifier in local declaration")
+    p = None
+    while token in {TokenType.INT, TokenType.VOID}:
+        tipo = type_specifier()
+        if token != TokenType.ID:
+            syntaxError("expected identifier in local declaration")
             break
-        name = tokenActual.lexema
+        name = tokenString
         match(TokenType.ID)
         q = var_declaration(tipo, name)
         if t is None:
-            t = q
-            p = t
+            t = p = q
         else:
             p.sibling = q
             p = q
     return t
+
 
 #12. statement-list —> { statement }
 def statement_list():
@@ -217,20 +223,25 @@ def statement_list():
 
 #13. statement —> expression-stmt | compound-stmt | selection-stmt | iteration-stmt | return-stmt
 def statement():
-    global token, tokenString, lineno  # Añadir esta línea
-    if token == TokenType.IF:
-        return selection_stmt()
-    elif token == TokenType.WHILE:
-        return iteration_stmt()
-    elif token == TokenType.RETURN:
-        return return_stmt()
-    elif token == TokenType.LBRACE:
-        return compound_stmt()
-    elif token in {TokenType.ID, TokenType.NUM, TokenType.LPAREN, TokenType.SEMI}:
-        return expression_stmt()
-    else:
-        syntaxError("Unexpected token at start of statement")
+    global token, tokenString, lineno
+    try:
+        if token == TokenType.IF:
+            return selection_stmt()
+        elif token == TokenType.WHILE:
+            return iteration_stmt()
+        elif token == TokenType.RETURN:
+            return return_stmt()
+        elif token == TokenType.LBRACE:
+            return compound_stmt()
+        elif token in {TokenType.ID, TokenType.NUM, TokenType.LPAREN, TokenType.SEMI}:
+            return expression_stmt()
+        else:
+            syntaxError("Unexpected token at start of statement")
+            return None
+    except:
+        syntaxError("error in statement -> ")
         return None
+    
 #15. selection-stmt —> "if" "(" expression ")" statement | "if" "(" expression ")" statement "else" statement
 def selection_stmt():
     t = newStmtNode(StmtKind.IfK)
@@ -260,13 +271,20 @@ def return_stmt():
     t = newStmtNode(StmtKind.ReturnK)
     match(TokenType.RETURN)
     
-    if token != TokenType.SEMI:
-        expr = expression()
-        if expr is not None:
-            t.child[0] = expr
+    try:
+        if token != TokenType.SEMI:
+            t.child[0] = expression()
+        match(TokenType.SEMI)
+    except:
+        syntaxError("error in return statement -> ")
+        # Intentar recuperarse encontrando el próximo ;
+        while token != TokenType.SEMI and token != TokenType.ENDFILE:
+            token, tokenString, lineno = getToken(False)
+        if token == TokenType.SEMI:
+            match(TokenType.SEMI)
     
-    match(TokenType.SEMI)
     return t
+
 #14. expression-stmt —> expression ";" | ";"
 def expression_stmt():
     if token == TokenType.SEMI:
@@ -282,26 +300,26 @@ def expression_stmt():
 
 #18. expression —> var "=" expression | simple-expression
 def expression():
+    global token, tokenString
+    
+    # Manejar primero el caso de asignación
     if token == TokenType.ID:
         name = tokenString
         match(TokenType.ID)
-        if token == TokenType.ASSIGN or token == TokenType.LBRACK:
-            v = var(name)
-            if token == TokenType.ASSIGN:
-                t = newExpNode(ExpKind.AssignK)
-                t.child[0] = v
-                match(TokenType.ASSIGN)
-                t.child[1] = expression()
-                return t
-            else:
-                return v
-        else:
-            savedName = name
-            t = newExpNode(ExpKind.IdK)
-            t.name = savedName
-            return simple_expression(t)
-    else:
-        return simple_expression(None)
+        
+        # Verificar si es asignación
+        if token == TokenType.ASSIGN:
+            t = newExpNode(ExpKind.AssignK)
+            t.name = name
+            match(TokenType.ASSIGN)
+            t.child[0] = additive_expression()  # Cambiado de expression() a additive_expression()
+            return t
+        
+        # Si no es asignación, procesar como expresión simple
+        return simple_expression(var(name))
+    
+    # Para otros casos (expresiones que no comienzan con ID)
+    return simple_expression(None)
 
 #19. var —> ID [ "[" expression "]" ]
 def var(name):
@@ -315,30 +333,35 @@ def var(name):
 
 #20. simple-expression —> additive-expression [ relop additive-expression ]
 def simple_expression(left=None):
-    if left is None:
-        t = additive_expression()
-    else:
-        t = left
-
-    if token in {TokenType.LTEQ, TokenType.LT, TokenType.GT, TokenType.GTEQ, TokenType.EQ, TokenType.NEQ}:
+    # Si no se proporciona un nodo izquierdo, empezar con additive_expression
+    t = additive_expression() if left is None else left
+    
+    # Manejar operadores relacionales
+    if token in {TokenType.LT, TokenType.LTEQ, TokenType.GT, 
+                TokenType.GTEQ, TokenType.EQ, TokenType.NEQ}:
         p = newExpNode(ExpKind.CompareK)
-        p.child[0] = t
         p.op = token
         match(token)
+        p.child[0] = t
         p.child[1] = additive_expression()
         t = p
+    
     return t
 
 #22. additive-expression —> term { addop term }
+
 def additive_expression():
-    t = term()
+    t = term()  # Comenzar con un término
+    
+    # Manejar operadores + y -
     while token in {TokenType.PLUS, TokenType.MINUS}:
         p = newExpNode(ExpKind.OpK)
         p.op = token
+        match(token)  # Consumir el operador
         p.child[0] = t
-        match(token)
         p.child[1] = term()
         t = p
+    
     return t
 
 #23. addop —> "+" | "-"
@@ -357,14 +380,17 @@ def addop():
 
 #24. term —> factor { mulop factor }
 def term():
-    t = factor()
+    t = factor()  # Comenzar con un factor
+    
+    # Manejar operadores * y /
     while token in {TokenType.TIMES, TokenType.OVER}:
         p = newExpNode(ExpKind.OpK)
         p.op = token
+        match(token)  # Consumir el operador
         p.child[0] = t
-        match(token)
         p.child[1] = factor()
         t = p
+    
     return t
 
 #25. mulop —> "*" | "/"
@@ -383,30 +409,31 @@ def mulop():
 
 #26. factor —> "(" expression ")" | var | call | NUM
 def factor():
-    global token, tokenString, lineno
-    t = newExpNode(ExpKind.ConstK)  # Crear el nodo primero
-    
     if token == TokenType.LPAREN:
         match(TokenType.LPAREN)
         t = expression()
         match(TokenType.RPAREN)
+        return t
     elif token == TokenType.ID:
         name = tokenString
         match(TokenType.ID)
         if token == TokenType.LPAREN:
-            t = call(name)
+            return call(name)
+        elif token == TokenType.LBRACK:
+            return var(name)
         else:
-            t = var(name)
+            t = newExpNode(ExpKind.IdK)
+            t.name = name
+            return t
     elif token == TokenType.NUM:
-        t.exp = ExpKind.ConstK  # Asegurar el tipo correcto
+        t = newExpNode(ExpKind.ConstK)
         t.val = int(tokenString)
         match(TokenType.NUM)
+        return t
     else:
-        syntaxError("Unexpected token in factor")
-        token, tokenString, lineno = getToken(imprimeScanner)
+        syntaxError("expected expression")
         return None
-    
-    return t
+
 #27. call —> ID "(" args ")"
 def call(name):
     t = newExpNode(ExpKind.CallK)
@@ -415,24 +442,29 @@ def call(name):
     t.child[0] = args()
     match(TokenType.RPAREN)
     return t
+
 #28. args —> arg-list | ε
 def args():
-    # Si el primer token no es un paréntesis de cierre, procesamos los argumentos
-    if tokenActual.tipo != TokenType.RIGHT_PAREN:
-        return arg_list()  # Procesamos los argumentos
-    else:
-        return []  # Si está vacío, retornamos una lista vacía
+    t = None
+    if token != TokenType.RPAREN:  # Si no es ')', hay argumentos
+        t = arg_list()
+    return t
+
 
 #29. arg-list —> expression { "," expression }
 def arg_list():
-    args = [expression()]  # Procesamos el primer argumento como una expresión
-    
-    # Mientras haya comas, seguimos procesando más expresiones
-    while tokenActual.tipo == TokenType.COMMA:
-        match()  # Consumimos la coma
-        args.append(expression())  # Procesamos el siguiente argumento
-    
-    return args
+    t = expression()  # Primer argumento
+    p = t
+    while token == TokenType.COMMA:
+        match(TokenType.COMMA)
+        q = expression()
+        if p is not None:
+            if t is None:
+                t = p = q
+            else:
+                p.sibling = q
+                p = q
+    return t
 
 def newStmtNode(kind):
     t = TreeNode();
@@ -589,15 +621,22 @@ def printTree(tree):
         tree = tree.sibling
     indentno -= 2  # UNINDENT
 
-def parse(imprime = True):
-    global token, tokenString, lineno, imprimeScanner
-    imprimeScanner = imprime  # Para que el scanner imprima si el parser imprime
+def parse(imprime=True):
+    global token, tokenString, lineno, imprimeScanner, Error
+    imprimeScanner = imprime
     token, tokenString, lineno = getToken(imprimeScanner)
     t = declaration_list()
-    if (token != TokenType.ENDFILE):
-        syntaxError("Code ends before file\n")
-    if imprime:
-        printTree(t)
+    
+    # Continuar procesando a pesar de errores
+    while token != TokenType.ENDFILE:
+        syntaxError("unexpected token at global scope -> ")
+        token, tokenString, lineno = getToken(False)
+    
+    if imprime and not Error:
+        print("\nAnálisis sintáctico completado sin errores")
+    elif imprime:
+        print("\nAnálisis sintáctico completado con errores (modo pánico activado)")
+    
     return t, Error
 
 def recibeParser(prog, pos, long): # Recibe los globales del main
